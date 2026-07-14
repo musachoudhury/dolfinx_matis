@@ -1725,7 +1725,7 @@ def _dm_create_field_decomposition(
         form = [form]
     spaces = _extract_function_spaces(form)
     ises = _cpp.la.petsc.create_global_index_sets(
-        [(V.dofmaps(0).index_map, V.dofmaps(0).index_map_bs) for V in spaces]  # type: ignore[union-attr]
+        [(V.dofmaps[0].index_map, V.dofmaps[0].index_map_bs) for V in spaces]  # type: ignore[union-attr]
     )
     if isinstance(u, Sequence):
         names = [f"{v.name + '_' if v.name != 'f' else ''}{i}" for i, v in enumerate(u)]

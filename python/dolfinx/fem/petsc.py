@@ -866,8 +866,8 @@ class LinearProblem:
 
         # Attach problem information
         dm = self.solver.getDM()
-        dm.setCreateMatrix(partial(_dm_create_matrix, self.A))
-        dm.setCreateFieldDecomposition(partial(_dm_create_field_decomposition, u, self.L))
+        dm.setCreateMatrix(functools.partial(_dm_create_matrix, self.A))
+        dm.setCreateFieldDecomposition(functools.partial(_dm_create_field_decomposition, u, self.L))
         self.solver.getPC().setDM(dm)
 
         if petsc_options_prefix == "":
@@ -1324,8 +1324,8 @@ class NonlinearProblem:
 
         # Attach problem information
         dm = self.solver.getDM()
-        dm.setCreateMatrix(partial(_dm_create_matrix, self.A))
-        dm.setCreateFieldDecomposition(partial(_dm_create_field_decomposition, u, self.F))
+        dm.setCreateMatrix(functools.partial(_dm_create_matrix, self.A))
+        dm.setCreateFieldDecomposition(functools.partial(_dm_create_field_decomposition, u, self.F))
         self.solver.getKSP().setDM(dm)
 
         if petsc_options_prefix == "":
@@ -1750,7 +1750,7 @@ def _dm_create_matrix(
 
     return J.duplicate()
 
-  
+
 def get_petsc_lib() -> pathlib.Path:
     """Find the full path of the PETSc shared library.
 

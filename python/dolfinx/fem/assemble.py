@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2022 Garth N. Wells, Jack S. Hale
+# Copyright (C) 2018-2022 Garth N. Wells, Jack S. Hale and Paul T. Kühner
 #
 # This file is part of DOLFINx (https://www.fenicsproject.org)
 #
@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import functools
 import typing
-import warnings
 from collections.abc import Sequence
 
 import numpy as np
@@ -26,9 +25,15 @@ from dolfinx.fem.forms import Form
 from dolfinx.fem.function import FunctionSpace
 
 
-def pack_constants(
-    form: Form | Sequence[Form],
-) -> npt.NDArray | Sequence[npt.NDArray]:
+@typing.overload
+def pack_constants(form: Form) -> npt.NDArray: ...
+
+
+@typing.overload
+def pack_constants(form: Sequence[Form]) -> list[npt.NDArray]: ...
+
+
+def pack_constants(form):
     """Pack form constants for use in assembly.
 
     Pack the 'constants' that appear in forms. The packed constants can
@@ -46,23 +51,25 @@ def pack_constants(
     Returns:
         A ``constant`` array for each form.
     """
-
-    def _pack(form):
-        if form is None:
-            return None
-        elif isinstance(form, Sequence):
-            return list(map(lambda sub_form: _pack(sub_form), form))
-        else:
-            return _pack_constants(form._cpp_object)
-
-    return _pack(form)
+    if form is None:
+        return None
+    elif isinstance(form, Sequence):
+        return list(map(pack_constants, form))
+    else:
+        return _pack_constants(form._cpp_object)
 
 
+@typing.overload
+def pack_coefficients(form: None | Form) -> dict[tuple[IntegralType, int], npt.NDArray]: ...
+
+
+@typing.overload
 def pack_coefficients(
-    form: Form | Sequence[Form],
-) -> (
-    dict[tuple[IntegralType, int], npt.NDArray] | list[dict[tuple[IntegralType, int], npt.NDArray]]
-):
+    form: Sequence[Form],
+) -> list[dict[tuple[IntegralType, int], npt.NDArray]]: ...
+
+
+def pack_coefficients(form):
     """Pack form coefficients for use in assembly.
 
     Pack the ``coefficients`` that appear in forms. The packed
@@ -80,16 +87,12 @@ def pack_coefficients(
     Returns:
         Coefficients for each form.
     """
-
-    def _pack(form):
-        if form is None:
-            return {}
-        elif isinstance(form, Sequence):
-            return list(map(lambda sub_form: _pack(sub_form), form))
-        else:
-            return _pack_coefficients(form._cpp_object)
-
-    return _pack(form)
+    if form is None:
+        return {}
+    elif isinstance(form, Sequence):
+        return list(map(pack_coefficients, form))
+    else:
+        return _pack_coefficients(form._cpp_object)
 
 
 # -- Vector and matrix instantiation --------------------------------------
@@ -100,19 +103,19 @@ def create_vector(V: FunctionSpace, dtype: npt.DTypeLike = default_scalar_type) 
 
     Args:
         V: A function space.
+        dtype: Data type of the vector.
 
     Returns:
         A vector compatible with the function space.
     """
     # Can just take the first dofmap here, since all dof maps have the same
     # index map in mixed-topology meshes
-    dofmap = V.dofmaps(0)  # type: ignore[attr-defined]
+    dofmap = V.dofmaps[0]
     return la.vector(dofmap.index_map, dofmap.index_map_bs, dtype=dtype)
 
 
 def create_matrix(a: Form, block_mode: la.BlockMode | None = None) -> la.MatrixCSR:
-    """Create a sparse matrix that is compatible with a given bilinear
-    form.
+    """Create a sparse matrix that is compatible with a bilinear form.
 
     Args:
         a: Bilinear form.
@@ -138,8 +141,9 @@ def assemble_scalar(
     constants: npt.NDArray | None = None,
     coeffs: dict[tuple[IntegralType, int], npt.NDArray] | None = None,
 ) -> float | complex:
-    """Assemble functional. The returned value is local and not
-    accumulated across processes.
+    """Assemble functional.
+
+    The returned value is local and not accumulated across processes.
 
     Args:
         M: The functional to compute.
@@ -159,8 +163,12 @@ def assemble_scalar(
         To compute the functional value on the whole domain, the output
         of this function is typically summed across all MPI ranks.
     """
-    constants = pack_constants(M) if constants is None else constants  # type: ignore[assignment]
-    coeffs = pack_coefficients(M) if coeffs is None else constants  # type: ignore[assignment]
+    if constants is None:
+        constants = pack_constants(M)
+
+    if coeffs is None:
+        coeffs = pack_coefficients(M)
+
     return _cpp.fem.assemble_scalar(M._cpp_object, constants, coeffs)
 
 
@@ -173,6 +181,7 @@ def assemble_vector(
     constants: npt.NDArray | None = None,
     coeffs: dict[tuple[IntegralType, int], npt.NDArray] | None = None,
 ) -> la.Vector:
+    """Assemble linear form into a vector."""
     return _assemble_vector_form(L, constants, coeffs)
 
 
@@ -207,8 +216,13 @@ def _assemble_vector_form(
     """
     b = create_vector(L.function_spaces[0], L.dtype)
     b.array[:] = 0
-    constants = pack_constants(L) if constants is None else constants  # type: ignore[assignment]
-    coeffs = pack_coefficients(L) if coeffs is None else coeffs  # type: ignore[assignment]
+
+    if constants is None:
+        constants = pack_constants(L)
+
+    if coeffs is None:
+        coeffs = pack_coefficients(L)
+
     _assemble_vector_array(b.array, L, constants, coeffs)
     return b
 
@@ -223,9 +237,9 @@ def _assemble_vector_array(
     """Assemble linear form into an existing array.
 
     Args:
-        b: The array to assemble the contribution from the calling MPI
+        b: Array to assemble the contribution from the calling MPI
             rank into. It must have the required size.
-        L: The linear form assemble.
+        L: Linear form assemble.
         constants: Constants that appear in the form. If ``None``,
             any required constants will be computed.
         coeffs: Coefficients that appear in the form. If not provided,
@@ -242,8 +256,12 @@ def _assemble_vector_array(
         :func:`dolfinx.la.Vector.scatter_reverse` on the return vector
         can accumulate ghost contributions.
     """
-    constants = pack_constants(L) if constants is None else constants  # type: ignore[assignment]
-    coeffs = pack_coefficients(L) if coeffs is None else coeffs  # type: ignore[assignment]
+    if constants is None:
+        constants = pack_constants(L)
+
+    if coeffs is None:
+        coeffs = pack_coefficients(L)
+
     _cpp.fem.assemble_vector(b, L._cpp_object, constants, coeffs)
     return b
 
@@ -267,15 +285,15 @@ def assemble_matrix(
         bcs: Boundary conditions that affect the assembled matrix.
             Degrees-of-freedom constrained by a boundary condition will
             have their rows/columns zeroed and the value ``diagonal``
-            set on on the matrix diagonal.
-        diagonal: Value to set on the matrix diagonal for Dirichlet
+            set on the matrix diagonal.
+        diag: Value to set on the matrix diagonal for Dirichlet
             boundary condition constrained degrees-of-freedom belonging
             to the same trial and test space.
         constants: Constants that appear in the form. If ``None``,
             any required constants will be computed.
         coeffs: Coefficients that appear in the form. If not provided,
             any required coefficients will be computed.
-         block_mode: Block size mode for the returned space matrix. If
+        block_mode: Block size mode for the returned space matrix. If
             ``None``, default is used.
 
     Returns:
@@ -285,8 +303,10 @@ def assemble_matrix(
         The returned matrix is not finalised, i.e. ghost values are not
         accumulated.
     """
-    bcs = [] if bcs is None else bcs
-    A: la.MatrixCSR = create_matrix(a, block_mode)
+    if bcs is None:
+        bcs = []
+
+    A = create_matrix(a, block_mode)
     _assemble_matrix_csr(A, a, bcs, diag, constants, coeffs)
     return A
 
@@ -310,7 +330,7 @@ def _assemble_matrix_csr(
             Degrees-of-freedom constrained by a boundary condition will
             have their rows/columns zeroed and the value ``diagonal``
             set on the diagonal.
-        diagonal: Value to set on the matrix diagonal for Dirichlet
+        diag: Value to set on the matrix diagonal for Dirichlet
             boundary condition constrained degrees-of-freedom belonging
             to the same trial and test space.
         constants: Constants that appear in the form. If not provided,
@@ -324,8 +344,13 @@ def _assemble_matrix_csr(
         accumulated.
     """
     bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
-    constants = pack_constants(a) if constants is None else constants  # type: ignore[assignment]
-    coeffs = pack_coefficients(a) if coeffs is None else coeffs  # type: ignore[assignment]
+
+    if constants is None:
+        constants = pack_constants(a)
+
+    if coeffs is None:
+        coeffs = pack_coefficients(a)
+
     _cpp.fem.assemble_matrix(A._cpp_object, a._cpp_object, constants, coeffs, bcs)
 
     # If matrix is a 'diagonal'block, set diagonal entry for constrained
@@ -344,11 +369,10 @@ def apply_lifting(
     bcs: Sequence[Sequence[DirichletBC]],
     x0: Sequence[npt.NDArray] | None = None,
     alpha: float = 1,
-    constants: npt.NDArray | None = None,
-    coeffs: dict[tuple[IntegralType, int], npt.NDArray] | None = None,
+    constants: Sequence[npt.NDArray] | None = None,
+    coeffs: Sequence[dict[tuple[IntegralType, int], npt.NDArray]] | None = None,
 ) -> None:
-    """Modify right-hand side vector ``b`` for lifting of Dirichlet
-    boundary conditions.
+    """Modify right-hand side for lifting of Dirichlet conditions.
 
     Consider the discrete algebraic system:
 
@@ -440,41 +464,18 @@ def apply_lifting(
         Boundary condition values are *not* set in ``b`` by this
         function. Use :func:`dolfinx.fem.DirichletBC.set` to set values
         in ``b``.
-    """
-    x0 = [] if x0 is None else x0
-    constants = (
-        [pack_constants(form) if form is not None else np.array([], dtype=b.dtype) for form in a]  # type: ignore[assignment]
-        if constants is None
-        else constants
-    )
-    coeffs = (
-        [{} if form is None else pack_coefficients(form) for form in a]  # type: ignore[assignment]
-        if coeffs is None
-        else coeffs
-    )
+    """  # noqa: D301
+    if x0 is None:
+        x0 = []
+
+    if constants is None:
+        constants = [
+            pack_constants(form) if form is not None else np.array([], dtype=b.dtype) for form in a
+        ]
+
+    if coeffs is None:
+        coeffs = [pack_coefficients(form) for form in a]
+
     _a = [None if form is None else form._cpp_object for form in a]
     _bcs = [[bc._cpp_object for bc in bcs0] for bcs0 in bcs]
     _cpp.fem.apply_lifting(b, _a, constants, coeffs, _bcs, x0, alpha)
-
-
-def set_bc(
-    b: npt.NDArray,
-    bcs: Sequence[DirichletBC],
-    x0: npt.NDArray | None = None,
-    alpha: float = 1,
-) -> None:
-    """Insert boundary condition values into vector.
-
-    Note:
-        This function is deprecated.
-
-    Only local (owned) entries are set, hence communication after
-    calling this function is not required unless ghost entries need to
-    be updated to the boundary condition value.
-    """
-    warnings.warn(
-        "dolfinx.fem.assembler.set_bc is deprecated. Use dolfinx.fem.DirichletBC.set instead.",
-        DeprecationWarning,
-    )
-    for bc in bcs:
-        bc.set(b, x0, alpha)

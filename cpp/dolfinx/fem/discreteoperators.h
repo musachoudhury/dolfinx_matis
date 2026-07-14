@@ -151,8 +151,8 @@ void discrete_curl(const FunctionSpace<T>& V0, const FunctionSpace<T>& V1,
   const auto [X, Xshape] = e1->interpolation_points();
 
   // Get/compute geometry map and evaluate at interpolation points
-  const CoordinateElement<T>& cmap = mesh->geometry().cmap();
-  auto x_dofmap = mesh->geometry().dofmap();
+  const CoordinateElement<T>& cmap = mesh->geometry().cmaps().front();
+  auto x_dofmap = mesh->geometry().dofmaps().front();
   const std::size_t num_dofs_g = cmap.dim();
   std::span<const T> x_g = mesh->geometry().x();
   std::array<std::size_t, 4> Phi_g_shape = cmap.tabulate_shape(1, Xshape[0]);
@@ -405,10 +405,10 @@ void discrete_gradient(mesh::Topology& topology,
 ///
 /// @param[in] V0 Space to interpolate from.
 /// @param[in] V1 Space to interpolate to.
-/// @param[in] mat_set Functor that sets values in a matrix.
+/// @param[in] mat_add Functor that adds values to a matrix.
 template <dolfinx::scalar T, std::floating_point U>
 void interpolation_matrix(const FunctionSpace<U>& V0,
-                          const FunctionSpace<U>& V1, auto&& mat_set)
+                          const FunctionSpace<U>& V1, auto&& mat_add)
 {
   // Get mesh
   auto mesh = V0.mesh();
@@ -453,8 +453,8 @@ void interpolation_matrix(const FunctionSpace<U>& V0,
   const std::size_t value_size0 = V0.element()->reference_value_size();
 
   // Get geometry data
-  const CoordinateElement<U>& cmap = mesh->geometry().cmap();
-  auto x_dofmap = mesh->geometry().dofmap();
+  const CoordinateElement<U>& cmap = mesh->geometry().cmaps().front();
+  auto x_dofmap = mesh->geometry().dofmaps().front();
   const std::size_t num_dofs_g = cmap.dim();
   std::span<const U> x_g = mesh->geometry().x();
 
@@ -536,6 +536,13 @@ void interpolation_matrix(const FunctionSpace<U>& V0,
   auto cell_map = mesh->topology()->index_map(tdim);
   assert(cell_map);
   std::int32_t num_cells = cell_map->size_local();
+  int row_bs = dofmap1->bs();
+  std::int32_t num_owned_rows
+      = dofmap1->index_map->size_local() * dofmap1->index_map_bs() / row_bs;
+  std::int32_t num_ghosted_rows
+      = dofmap1->index_map->num_ghosts() * dofmap1->index_map_bs() / row_bs;
+  std::vector<std::int8_t> row_added(num_owned_rows + num_ghosted_rows, 0);
+
   for (std::int32_t c = 0; c < num_cells; ++c)
   {
     // Get cell geometry (coordinate dofs)
@@ -627,7 +634,26 @@ void interpolation_matrix(const FunctionSpace<U>& V0,
     }
 
     apply_inverse_dof_transform1(Ab, cell_info, c, space_dim0);
-    mat_set(dofmap1->cell_dofs(c), dofmap0->cell_dofs(c), Ab);
+
+    // Zero out all rows that have already been added on this process
+    // and only add owned rows
+    {
+      md::mdspan<T, md::dextents<std::size_t, 2>> A(Ab.data(), space_dim1,
+                                                    space_dim0);
+      auto row_dofs = dofmap1->cell_dofs(c);
+      for (std::size_t i = 0; i < row_dofs.size(); ++i)
+      {
+        std::int32_t r = row_dofs[i];
+        if (r >= num_owned_rows || row_added[r])
+        {
+          for (std::size_t j = 0; j < space_dim0; ++j)
+            for (int k = 0; k < row_bs; ++k)
+              A(i * row_bs + k, j) = 0.0;
+        }
+        row_added[r] = 1;
+      }
+    }
+    mat_add(dofmap1->cell_dofs(c), dofmap0->cell_dofs(c), Ab);
   }
 }
 

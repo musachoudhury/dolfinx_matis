@@ -33,7 +33,7 @@ __all__ = ["assign", "create_vector", "create_vector_wrap"]
 
 
 def _ghost_update(x: PETSc.Vec, insert_mode: PETSc.InsertMode, scatter_mode: PETSc.ScatterMode):  # type: ignore[name-defined]
-    """Helper function for ghost updating PETSc vectors"""
+    """Helper function for ghost updating PETSc vectors."""
     if x.getType() == PETSc.Vec.Type.NEST:  # type: ignore[attr-defined]
         for x_sub in x.getNestSubVecs():
             x_sub.ghostUpdate(addv=insert_mode, mode=scatter_mode)
@@ -43,7 +43,7 @@ def _ghost_update(x: PETSc.Vec, insert_mode: PETSc.InsertMode, scatter_mode: PET
 
 
 def _zero_vector(x: PETSc.Vec):  # type: ignore[name-defined]
-    """Helper function for zeroing out PETSc vectors"""
+    """Helper function for zeroing out PETSc vectors."""
     if x.getType() == PETSc.Vec.Type.NEST:  # type: ignore[attr-defined]
         for x_sub in x.getNestSubVecs():
             with x_sub.localForm() as x_sub_local:
@@ -81,7 +81,7 @@ def create_vector(
 
     1. If ``maps=[(im_0, bs_0), ..., (im_n, bs_n)]`` is a sequence of
        indexmaps and blocksizes and ``kind`` is ``None``or is
-       ``PETSc.Vec.Type.MPI``, a ghosted PETSc vector whith block structure
+       ``PETSc.Vec.Type.MPI``, a ghosted PETSc vector with block structure
        described by ``(im_i, bs_i)`` is created.
        The created vector ``b`` is initialized such that on each MPI
        process ``b = [b_0, b_1, ..., b_n, b_0g, b_1g, ..., b_ng]``, where
@@ -110,8 +110,8 @@ def create_vector(
        (a 'nest' of ghosted PETSc vectors) is created.
 
     Args:
-        map: Sequence of tuples of ``IndexMap`` and the associated block
-             size.
+        maps: Sequence of tuples of ``IndexMap`` and the associated
+            block size.
         kind: PETSc vector type (``VecType``) to create.
 
     Returns:
@@ -124,7 +124,7 @@ def create_vector(
         ghosts = index_map.ghosts.astype(PETSc.IntType)  # type: ignore[attr-defined]
         size = (index_map.size_local * bs, index_map.size_global * bs)
         b = PETSc.Vec().createGhost(ghosts, size=size, bsize=bs, comm=index_map.comm)  # type: ignore
-        if kind == PETSc.Vec.Type.MPI:
+        if kind == PETSc.Vec.Type.MPI:  # type: ignore[attr-defined]
             _assign_block_data(maps, b)
         return b
 
@@ -174,7 +174,7 @@ def assign(
     """
     if x1.getType() == PETSc.Vec.Type().NEST:  # type: ignore[attr-defined]
         x1_nest = x1.getNestSubVecs()
-        for _x0, _x1 in zip(x0, x1_nest):
+        for _x0, _x1 in zip(x0, x1_nest, strict=True):
             with _x1.localForm() as x:
                 x.array_w[:] = _x0
     else:
@@ -206,7 +206,7 @@ def _(
     """
     if x0.getType() == PETSc.Vec.Type().NEST:  # type: ignore[attr-defined]
         x0_nest = x0.getNestSubVecs()
-        for _x0, _x1 in zip(x0_nest, x1):
+        for _x0, _x1 in zip(x0_nest, x1, strict=True):
             with _x0.localForm() as x:
                 _x1[:] = x.array_r[:]  # type: ignore[index]
     else:

@@ -14,18 +14,22 @@ Public user interface
    dolfinx.common
    dolfinx.fem
    dolfinx.fem.petsc
+   dolfinx.fem.problems
    dolfinx.geometry
    dolfinx.graph
    dolfinx.io
    dolfinx.io.gmsh
+   dolfinx.io.vtkhdf
    dolfinx.jit
    dolfinx.la
    dolfinx.la.petsc
+   dolfinx.la.superlu_dist
    dolfinx.mesh
    dolfinx.nls.petsc
-   dolfinx.pkgconfig
    dolfinx.plot
 
+
+.. _dolfinx_cpp_interface:
 
 nanobind/C++interface
 ^^^^^^^^^^^^^^^^^^^^^

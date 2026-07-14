@@ -9,6 +9,7 @@
 #include "xdmf_function.h"
 #include "xdmf_mesh.h"
 #include "xdmf_utils.h"
+#include <H5Fpublic.h>
 #include <boost/lexical_cast.hpp>
 #include <dolfinx/common/log.h>
 #include <dolfinx/fem/Function.h>
@@ -389,8 +390,9 @@ XDMFFile::read_meshtags(const mesh::Mesh<double>& mesh, const std::string& name,
       entities_values = io::distribute_entity_data<std::int32_t>(
           *mesh.topology(), mesh.geometry().input_global_indices(),
           mesh.geometry().index_map()->size_global(),
-          mesh.geometry().cmap().create_dof_layout(), mesh.geometry().dofmap(),
-          mesh::cell_dim(cell_type), entities_span, values);
+          mesh.geometry().cmaps().front().create_dof_layout(),
+          mesh.geometry().dofmaps().front(), mesh::cell_dim(cell_type),
+          entities_span, values);
 
   spdlog::info("XDMF create meshtags");
   std::size_t num_vertices_per_entity = mesh::cell_num_entities(
@@ -466,6 +468,12 @@ std::string XDMFFile::read_information(const std::string& name,
   // Read data and trim any leading/trailing whitespace
   std::string value_str = info_node.attribute("Value").as_string();
   return value_str;
+}
+//-----------------------------------------------------------------------------
+void XDMFFile::flush()
+{
+  // _xml_doc already flushed after every write
+  H5Fflush(_h5_id, H5F_SCOPE_GLOBAL);
 }
 //-----------------------------------------------------------------------------
 MPI_Comm XDMFFile::comm() const { return _comm.comm(); }

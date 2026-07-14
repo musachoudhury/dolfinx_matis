@@ -42,7 +42,8 @@ void la::petsc::error(PetscErrorCode error_code, const std::string& filename,
   // Log detailed error info
   spdlog::info("PETSc error in '{}', '{}'", filename.c_str(),
                petsc_function.c_str());
-  spdlog::info("PETSc error code '{}' '{}'", (int)error_code, desc);
+  spdlog::info("PETSc error code '{}' '{}'", static_cast<int>(error_code),
+               desc);
   throw std::runtime_error("Failed to successfully call PETSc function '"
                            + petsc_function + "'. PETSc error code is: "
                            + std ::to_string(error_code) + ", "
@@ -176,8 +177,8 @@ std::vector<IS> la::petsc::create_global_index_sets(
   if (comm == MPI_COMM_NULL)
     return is;
 
-  int ierr = MPI_Exscan(&merged_local_size, &offset, 1, MPI_INT64_T,
-                        MPI_SUM, comm);
+  int ierr
+      = MPI_Exscan(&merged_local_size, &offset, 1, MPI_INT64_T, MPI_SUM, comm);
   dolfinx::MPI::check_error(comm, ierr);
 
   for (auto& map : maps)
@@ -363,9 +364,8 @@ Mat la::petsc::create_matrix(MPI_Comm comm, const SparsityPattern& sp,
   {
     const std::vector map0 = maps[0]->global_indices();
     const std::vector<PetscInt> _map0(map0.begin(), map0.end());
-    ierr = ISLocalToGlobalMappingCreate(comm, bs[0], _map0.size(),
-                                        _map0.data(), PETSC_COPY_VALUES,
-                                        &local_to_global0);
+    ierr = ISLocalToGlobalMappingCreate(comm, bs[0], _map0.size(), _map0.data(),
+                                        PETSC_COPY_VALUES, &local_to_global0);
     if (ierr != 0)
       petsc::error(ierr, __FILE__, "ISLocalToGlobalMappingCreate");
   }
